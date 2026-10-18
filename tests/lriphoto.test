@@ -1,0 +1,218 @@
+# Tests for the LRIPhoto package (LRI::imgtransform, LRI::imgcopy)
+
+if {[lsearch [namespace children] ::tcltest] == -1} {
+    package require tcltest
+    namespace import ::tcltest::*
+}
+
+package require Tk
+package require LRIPhoto
+wm withdraw .
+
+# 3x2 image, one distinct color per pixel:
+#   red   green blue
+#   white black gray
+proc mkimg {} {
+    set img [image create photo -width 3 -height 2]
+    $img put {{#ff0000 #00ff00 #0000ff} {#ffffff #000000 #808080}}
+    return $img
+}
+proc size {img} {list [image width $img] [image height $img]}
+proc px {img x y} {$img get $x $y}
+
+test lriphoto-1.1 {package version} -body {
+    package present LRIPhoto
+} -result 1.0
+
+test lriphoto-2.1 {scale down} -body {
+    set img [image create photo -width 200 -height 100]
+    LRI::imgtransform $img -scale 50
+    size $img
+} -cleanup {image delete $img} -result {100 50}
+
+test lriphoto-2.2 {scale up} -body {
+    set img [image create photo -width 20 -height 10]
+    LRI::imgtransform $img -scale 250
+    size $img
+} -cleanup {image delete $img} -result {50 25}
+
+test lriphoto-2.3 {scalex alone keeps height} -body {
+    set img [image create photo -width 200 -height 100]
+    LRI::imgtransform $img -scalex 25
+    size $img
+} -cleanup {image delete $img} -result {50 100}
+
+test lriphoto-2.4 {scalex and scaley} -body {
+    set img [image create photo -width 200 -height 100]
+    LRI::imgtransform $img -scalex 150 -scaley 10
+    size $img
+} -cleanup {image delete $img} -result {300 10}
+
+test lriphoto-2.5 {tiny scale never gives an empty image} -body {
+    set img [image create photo -width 10 -height 10]
+    LRI::imgtransform $img -scale 1
+    size $img
+} -cleanup {image delete $img} -result {1 1}
+
+test lriphoto-2.6 {scale of a uniform image keeps the color} -body {
+    set img [image create photo -width 10 -height 10]
+    $img put #336699 -to 0 0 10 10
+    LRI::imgtransform $img -scale 30
+    px $img 1 1
+} -cleanup {image delete $img} -result {51 102 153}
+
+test lriphoto-2.7 {scale ignores -scale when -scalex is given} -body {
+    set img [image create photo -width 100 -height 100]
+    LRI::imgtransform $img -scalex 50 -scale 200
+    size $img
+} -cleanup {image delete $img} -result {50 100}
+
+test lriphoto-3.1 {rotate 90 clockwise} -body {
+    set img [mkimg]
+    LRI::imgtransform $img -rotate 90
+    list [size $img] [px $img 1 0] [px $img 0 0] [px $img 0 2]
+} -cleanup {image delete $img} -result {{2 3} {255 0 0} {255 255 255} {128 128 128}}
+
+test lriphoto-3.2 {rotate 180} -body {
+    set img [mkimg]
+    LRI::imgtransform $img -rotate 180
+    list [size $img] [px $img 2 1] [px $img 0 0]
+} -cleanup {image delete $img} -result {{3 2} {255 0 0} {128 128 128}}
+
+test lriphoto-3.3 {rotate 270 == rotate -90} -body {
+    set img [mkimg]
+    LRI::imgtransform $img -rotate -90
+    list [size $img] [px $img 0 2] [px $img 1 0]
+} -cleanup {image delete $img} -result {{2 3} {255 0 0} {128 128 128}}
+
+test lriphoto-3.4 {rotate 4 times is identity} -body {
+    set img [mkimg]
+    foreach i {1 2 3 4} {LRI::imgtransform $img -rotate 90}
+    list [size $img] [px $img 0 0] [px $img 2 1]
+} -cleanup {image delete $img} -result {{3 2} {255 0 0} {128 128 128}}
+
+test lriphoto-3.5 {rotate keeps transparency} -body {
+    set img [image create photo -width 2 -height 1]
+    $img put red -to 0 0 1 1
+    LRI::imgtransform $img -rotate 90
+    list [$img transparency get 0 0] [$img transparency get 0 1]
+} -cleanup {image delete $img} -result {0 1}
+
+test lriphoto-4.1 {gray} -body {
+    set img [mkimg]
+    LRI::imgtransform $img -gray 1
+    list [px $img 0 0] [px $img 0 1] [px $img 1 1]
+} -cleanup {image delete $img} -result {{85 85 85} {255 255 255} {0 0 0}}
+
+test lriphoto-4.2 {gray: transparent pixels become white} -body {
+    set img [image create photo -width 1 -height 1]
+    LRI::imgtransform $img -gray yes
+    list [px $img 0 0] [$img transparency get 0 0]
+} -cleanup {image delete $img} -result {{255 255 255} 0}
+
+test lriphoto-4.3 {-gray 0 does nothing} -body {
+    set img [mkimg]
+    LRI::imgtransform $img -gray 0
+    px $img 0 0
+} -cleanup {image delete $img} -result {255 0 0}
+
+test lriphoto-5.1 {bw gives only black and white pixels} -body {
+    set img [image create photo -width 40 -height 40]
+    $img put #808080 -to 0 0 40 40
+    LRI::imgtransform $img -bw 1
+    set colors {}
+    for {set y 0} {$y < 40} {incr y} {
+	for {set x 0} {$x < 40} {incr x} {
+	    dict incr colors [px $img $x $y]
+	}
+    }
+    list [lsort [dict keys $colors]] \
+	[expr {abs([dict get $colors {255 255 255}] - 800) < 40}]
+} -cleanup {image delete $img} -result {{{0 0 0} {255 255 255}} 1}
+
+test lriphoto-5.2 {bw dithers dark gray with error diffusion} -body {
+    # 64/255 -> about one white pixel in four
+    set img [image create photo -width 40 -height 40]
+    $img put #404040 -to 0 0 40 40
+    LRI::imgtransform $img -bw 1
+    set white 0
+    for {set y 0} {$y < 40} {incr y} {
+	for {set x 0} {$x < 40} {incr x} {
+	    if {[lindex [px $img $x $y] 0] == 255} {incr white}
+	}
+    }
+    expr {abs($white - 400) < 40}
+} -cleanup {image delete $img} -result 1
+
+test lriphoto-6.1 {imgcopy copies and transforms, source untouched} -body {
+    set src [mkimg]
+    set dst [image create photo]
+    LRI::imgcopy $src $dst -rotate 90 -scale 200
+    list [size $src] [size $dst] [px $src 0 0] [px $dst 3 0]
+} -cleanup {image delete $src $dst} -result {{3 2} {4 6} {255 0 0} {255 0 0}}
+
+test lriphoto-6.2 {imgcopy without option} -body {
+    set src [mkimg]
+    set dst [image create photo]
+    LRI::imgcopy $src $dst
+    list [size $dst] [px $dst 2 1]
+} -cleanup {image delete $src $dst} -result {{3 2} {128 128 128}}
+
+test lriphoto-6.3 {imgcopy onto itself} -body {
+    set img [mkimg]
+    LRI::imgcopy $img $img -scale 200
+    size $img
+} -cleanup {image delete $img} -result {6 4}
+
+test lriphoto-7.1 {empty image} -body {
+    set img [image create photo]
+    LRI::imgtransform $img -scale 50 -rotate 90 -bw 1
+    size $img
+} -cleanup {image delete $img} -result {0 0}
+
+test lriphoto-8.1 {errors: no args} -body {
+    LRI::imgtransform
+} -returnCodes error -match glob -result {wrong # args: should be "LRI::imgtransform image *}
+
+test lriphoto-8.2 {errors: unknown image} -body {
+    LRI::imgtransform nosuchimage -scale 50
+} -returnCodes error -result {image "nosuchimage" doesn't exist or is not a photo image}
+
+test lriphoto-8.3 {errors: bad option} -setup {set img [mkimg]} -body {
+    LRI::imgtransform $img -foo 1
+} -cleanup {image delete $img} -returnCodes error -match glob -result {bad option "-foo": must be *}
+
+test lriphoto-8.4 {errors: missing value} -setup {set img [mkimg]} -body {
+    LRI::imgtransform $img -scale
+} -cleanup {image delete $img} -returnCodes error -result {missing value for option "-scale"}
+
+test lriphoto-8.5 {errors: bad angle} -setup {set img [mkimg]} -body {
+    LRI::imgtransform $img -rotate 45
+} -cleanup {image delete $img} -returnCodes error -result {bad angle "45": must be a multiple of 90}
+
+test lriphoto-8.6 {errors: bad scale} -setup {set img [mkimg]} -body {
+    LRI::imgtransform $img -scale 0
+} -cleanup {image delete $img} -returnCodes error -result {bad value "0" for option "-scale": must be a positive percentage}
+
+test lriphoto-8.7 {errors: not an integer} -setup {set img [mkimg]} -body {
+    LRI::imgtransform $img -scale abc
+} -cleanup {image delete $img} -returnCodes error -match glob -result {expected integer but got "abc"}
+
+test lriphoto-8.8 {errors: imgcopy unknown dest} -setup {set img [mkimg]} -body {
+    LRI::imgcopy $img nosuchimage
+} -cleanup {image delete $img} -returnCodes error -result {image "nosuchimage" doesn't exist or is not a photo image}
+
+test lriphoto-9.1 {real image: Tux.png} -body {
+    set img [image create photo -file [file join [testsDirectory] Tux.png]]
+    set w [image width $img]; set h [image height $img]
+    LRI::imgtransform $img -scale 50 -rotate 90 -gray 1
+    expr {[size $img] eq [list [expr {$h*50/100}] [expr {$w*50/100}]]}
+} -cleanup {image delete $img} -result 1
+
+rename mkimg {}
+rename size {}
+rename px {}
+
+# cleanup
+::tcltest::cleanupTests
+return

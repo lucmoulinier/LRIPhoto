@@ -1,0 +1,25 @@
+# Whitelist: everything is ignored except the paths below
+/*
+!/.gitignore
+!/LICENSE
+!/README.md
+!/configure
+!/configure.ac
+!/aclocal.m4
+!/Makefile.in
+!/pkgIndex.tcl.in
+!/tclconfig/
+
+!/doc/
+/doc/*
+!/doc/man.macros
+
+!/generic/
+/generic/*
+!/generic/LRIPhoto.c
+
+!/tests/
+/tests/*
+!/tests/all.tcl
+!/tests/lriphoto.test
+!/tests/Tux.png

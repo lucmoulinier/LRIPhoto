@@ -1,0 +1,12 @@
+#
+# Tcl package index file
+#
+# Tcl 9 loads libtcl9@PACKAGE_NAME@..., Tcl 8.5/8.6 loads lib@PACKAGE_NAME@...
+#
+if {[package vsatisfies [package provide Tcl] 9.0-]} {
+    package ifneeded @PACKAGE_NAME@ @PACKAGE_VERSION@ \
+	[list load [file join $dir @PKG_LIB_FILE9@] @PACKAGE_NAME@]
+} else {
+    package ifneeded @PACKAGE_NAME@ @PACKAGE_VERSION@ \
+	[list load [file join $dir @PKG_LIB_FILE8@] @PACKAGE_NAME@]
+}
